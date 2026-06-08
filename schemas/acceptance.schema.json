@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devflow.local/schemas/acceptance.schema.json",
+  "title": "Acceptance",
+  "description": "An ordered array of typed, machine-checkable acceptance items for one devflow task. Each item is self-contained: its 'type' selects exactly one shape (oneOf), and every shape carries the fields a machine needs to PROVE the item without human judgement. A verifier replaying these items must be able to pass/fail each one objectively.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "description": "One machine-checkable acceptance item. The 'type' discriminator picks exactly one of the self-contained variants below.",
+    "oneOf": [
+      {
+        "title": "command",
+        "description": "Run a shell command; the item passes iff the process exit code matches expectation. Use for build/lint/format/typecheck/any binary gate.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "cmd", "must_pass"],
+        "properties": {
+          "type": { "const": "command", "description": "Discriminator." },
+          "cmd": { "type": "string", "minLength": 1, "description": "Exact shell command to execute, runnable as-is from the repo root." },
+          "must_pass": { "type": "boolean", "description": "true = command must exit 0; false = command must exit non-zero (a negative assertion)." },
+          "cwd": { "type": "string", "description": "Optional working directory (repo-relative) to run the command in; defaults to repo root." },
+          "timeout_s": { "type": "integer", "minimum": 1, "description": "Optional hard timeout in seconds; exceeding it fails the item." },
+          "expect_stdout": { "type": "string", "description": "Optional substring/regex that stdout must contain for the item to pass." }
+        }
+      },
+      {
+        "title": "unit_test",
+        "description": "Run a unit-test selector and require all selected tests to pass. Use for fast, isolated, no-I/O tests.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "cmd"],
+        "properties": {
+          "type": { "const": "unit_test", "description": "Discriminator." },
+          "cmd": { "type": "string", "minLength": 1, "description": "Command that runs the targeted unit tests (e.g. 'go test ./pkg/foo/...', 'pytest tests/unit/test_x.py')." },
+          "selector": { "type": "string", "description": "Optional test name / pattern the suite must include (asserts the test actually exists and ran, not silently skipped)." },
+          "must_pass": { "type": "boolean", "default": true, "description": "Whether the suite must exit green (default true)." }
+        }
+      },
+      {
+        "title": "integration_test",
+        "description": "Run an integration/e2e-ish test that crosses a real boundary (DB, network, multiple modules). Use when isolation is impossible or the boundary is the point.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "cmd"],
+        "properties": {
+          "type": { "const": "integration_test", "description": "Discriminator." },
+          "cmd": { "type": "string", "minLength": 1, "description": "Command that runs the integration test(s)." },
+          "selector": { "type": "string", "description": "Optional test name / pattern that must be present in the run." },
+          "requires": { "type": "array", "items": { "type": "string" }, "description": "External dependencies the test needs up (e.g. 'postgres', 'redis', 'staging-api'); a verifier provisions/checks these before running." },
+          "must_pass": { "type": "boolean", "default": true, "description": "Whether the suite must exit green (default true)." }
+        }
+      },
+      {
+        "title": "runtime_probe",
+        "description": "Drive the RUNNING system over a route/endpoint and assert observable response facts. Use for HTTP routes, RPC methods, or UI flows verifiable against a live process.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "route", "assertions"],
+        "properties": {
+          "type": { "const": "runtime_probe", "description": "Discriminator." },
+          "route": { "type": "string", "minLength": 1, "description": "The route/endpoint/path to hit (e.g. 'GET /api/balance', '/dashboard')." },
+          "method": { "type": "string", "enum": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], "description": "Optional HTTP method; defaults to GET when omitted." },
+          "assertions": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Observable, machine-checkable assertions about the live response. ALL must hold for the item to pass.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["check"],
+              "properties": {
+                "check": { "type": "string", "enum": ["status", "header", "json_path", "body_contains", "no_console_errors", "latency_ms"], "description": "What facet of the response to assert." },
+                "path": { "type": "string", "description": "JSONPath/header-name selector when check is json_path or header." },
+                "equals": { "description": "Expected exact value (status code, header value, json value)." },
+                "max": { "type": "number", "description": "Upper bound (used by latency_ms)." },
+                "contains": { "type": "string", "description": "Substring the targeted text must contain (body_contains / header)." }
+              }
+            }
+          }
+        }
+      },
+      {
+        "title": "diff_assertion",
+        "description": "Constrain WHICH files the change is allowed to touch — enforces path ownership and prevents silent scope creep. A verifier diffs the branch against base and checks the touched set.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "must_touch", "must_not_touch"],
+        "properties": {
+          "type": { "const": "diff_assertion", "description": "Discriminator." },
+          "must_touch": { "type": "array", "items": { "type": "string" }, "description": "Glob(s)/path(s) that the diff MUST modify (the work is incomplete if untouched)." },
+          "must_not_touch": { "type": "array", "items": { "type": "string" }, "description": "Glob(s)/path(s) that the diff MUST NOT modify (out-of-lane edits fail the item)." },
+          "base": { "type": "string", "description": "Optional base ref to diff against; defaults to the epic branch's merge-base." }
+        }
+      },
+      {
+        "title": "contract_assertion",
+        "description": "Assert that an interface/contract artifact (OpenAPI, protobuf, JSON Schema, GraphQL SDL, exported type surface) conforms or did not break compatibility. Use for API/schema stability gates.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "artifact", "assert"],
+        "properties": {
+          "type": { "const": "contract_assertion", "description": "Discriminator." },
+          "artifact": { "type": "string", "minLength": 1, "description": "Repo-relative path to the contract artifact (e.g. 'api/openapi.yaml', 'proto/order.proto')." },
+          "assert": { "type": "string", "enum": ["matches", "backward_compatible", "no_breaking_change", "validates_against"], "description": "The contract property to enforce." },
+          "against": { "type": "string", "description": "Optional reference the artifact is compared/validated against (e.g. a baseline ref, a schema file)." },
+          "cmd": { "type": "string", "description": "Optional command that performs the contract check (e.g. 'buf breaking', 'oasdiff'); its exit code decides the item." }
+        }
+      },
+      {
+        "title": "migration_dry_run",
+        "description": "Apply a schema/data migration in dry-run (non-destructive) mode and require it to succeed and be reversible. Use to gate any migration WITHOUT touching prod data (the destructive path is a tripwire, never automated).",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "cmd"],
+        "properties": {
+          "type": { "const": "migration_dry_run", "description": "Discriminator." },
+          "cmd": { "type": "string", "minLength": 1, "description": "Dry-run/plan command that exercises the migration without committing (e.g. 'migrate up --dry-run', 'alembic upgrade head --sql')." },
+          "rollback_cmd": { "type": "string", "description": "Command proving the migration is reversible (down/rollback in dry-run); recommended for any forward migration." },
+          "must_be_reversible": { "type": "boolean", "default": true, "description": "Whether a working rollback path is required for the item to pass (default true)." }
+        }
+      },
+      {
+        "title": "performance_budget",
+        "description": "Assert a measured metric stays within a budget. Use to gate latency/throughput/size/allocation regressions. The metric MUST be measured against the live/built artifact, never guessed.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "metric", "max"],
+        "properties": {
+          "type": { "const": "performance_budget", "description": "Discriminator." },
+          "metric": { "type": "string", "minLength": 1, "description": "Name of the measured metric (e.g. 'p95_latency_ms', 'bundle_size_kb', 'allocs_per_op', 'lighthouse_perf')." },
+          "max": { "type": "number", "description": "Upper bound the measured metric must not exceed." },
+          "min": { "type": "number", "description": "Optional lower bound (for metrics where higher is the regression, e.g. throughput/score)." },
+          "unit": { "type": "string", "description": "Unit of the metric (ms, kb, ops/s, score) for unambiguous reporting." },
+          "measure_cmd": { "type": "string", "description": "Command that produces the measurement (e.g. a benchmark/lighthouse run); its output supplies the value compared to max/min." }
+        }
+      }
+    ]
+  }
+}

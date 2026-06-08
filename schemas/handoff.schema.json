@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devflow.local/schemas/handoff.schema.json",
+  "title": "Handoff",
+  "description": "An implementer's handoff for one task, carrying PROVABLE TDD evidence (#8). The schema does not merely shape the fields — it ENCODES the proof: the RED step must have failed (exit != 0) for the expected reason, the GREEN step must have passed (exit == 0), and the same commands are independently replayable by the blind verify panel. A handoff that did not actually go RED->GREEN cannot validate.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["task", "branch", "sha", "red", "green", "test_files_added"],
+  "properties": {
+    "task": {
+      "type": "string",
+      "pattern": "^T-[0-9]{3,}$",
+      "description": "Id of the task this handoff completes."
+    },
+    "branch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The branch the work was committed on (the per-task/worktree branch the team cherry-picks from)."
+    },
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{7,40}$",
+      "description": "Commit SHA of the GREEN state — the exact revision the verifier checks out in a clean worktree."
+    },
+    "red": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cmd", "exit", "expected_failure_seen", "evidence"],
+      "description": "The failing-first step. PROOF that the test was written before the implementation and failed for the RIGHT reason.",
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1, "description": "Exact test command run before implementing — must be identical to green.cmd so the transition is meaningful." },
+        "exit": { "type": "integer", "not": { "const": 0 }, "description": "Process exit code of the RED run. MUST be non-zero — a red step that exited 0 is not a red step and fails validation." },
+        "expected_failure_seen": { "const": true, "description": "Asserts the failure observed was the EXPECTED one (the new assertion failing), not a compile error / wrong-test / import failure. Must be true." },
+        "evidence": { "type": "string", "minLength": 1, "description": "Verbatim excerpt of the failing output (the assertion message / failing test name) demonstrating expected_failure_seen." }
+      }
+    },
+    "green": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cmd", "exit", "evidence"],
+      "description": "The passing step after implementation. PROOF the same command now passes.",
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1, "description": "Exact test command run after implementing — must match red.cmd." },
+        "exit": { "const": 0, "description": "Process exit code of the GREEN run. MUST be 0." },
+        "evidence": { "type": "string", "minLength": 1, "description": "Verbatim excerpt of the passing output (e.g. 'ok ... PASS', test count) at sha." }
+      }
+    },
+    "integration": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cmd", "exit"],
+      "description": "Optional broader suite run proving the change integrates without regressing siblings.",
+      "properties": {
+        "cmd": { "type": "string", "minLength": 1, "description": "Command for the wider integration/regression suite." },
+        "exit": { "const": 0, "description": "Process exit code; MUST be 0 when integration is reported." }
+      }
+    },
+    "test_files_added": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Repo-relative test files created/extended for this task. Non-empty: a TDD handoff must add at least one test file (its existence at sha is verifier-checkable)."
+    }
+  }
+}

@@ -1,0 +1,60 @@
+# devflow quality profile (example)  —  formalizes design gap #11
+#
+# This file is the per-repo quality bar the verify panel and CI gate enforce.
+# Drop a copy as `.devflow/quality.yml` in a target repo and edit the commands
+# to match its toolchain. Two layers:
+#   - `required`   : checks that MUST pass for EVERY task, regardless of stack.
+#   - `conditional`: extra checks switched on by detected stack / task flags
+#                    (web target, go module, presence of a migration).
+#   - `coverage`   : line-coverage floor + a no-regression ratchet.
+#
+# Every `cmd` is a real, replayable shell command (maps onto an acceptance
+# `command`/`unit_test` item). Never invent metrics — measured values come from
+# running these commands against the built artifact, not from memory.
+
+version: 1
+
+# ---------------------------------------------------------------------------
+# Always-on. A task is not done until all of these are green.
+# ---------------------------------------------------------------------------
+required:
+  unit:
+    cmd: "make test-unit"          # fast, isolated tests
+    must_pass: true
+  typecheck:
+    cmd: "make typecheck"          # tsc --noEmit / mypy / go vet etc.
+    must_pass: true
+  lint:
+    cmd: "make lint"               # golangci-lint / eslint / ruff
+    must_pass: true
+  build:
+    cmd: "make build"              # the artifact must actually compile/bundle
+    must_pass: true
+
+# ---------------------------------------------------------------------------
+# Switched on by stack/flag. `when` is evaluated against the task + repo
+# (web: task.web == true ; go: a go.mod exists ; migration: the diff touches
+# a migrations path). Off => the check is simply skipped, not failed.
+# ---------------------------------------------------------------------------
+conditional:
+  - when: web                      # task.web == true
+    e2e:
+      cmd: "make test-e2e"         # browser-driven end-to-end (chrome-devtools lane mirrors this)
+      must_pass: true
+  - when: go                       # repo has a go.mod
+    race:
+      cmd: "go test -race ./..."   # data-race detector on the full module
+      must_pass: true
+  - when: migration                # diff touches a migrations dir
+    dry-run:
+      cmd: "make migrate-dryrun"   # non-destructive plan; the destructive apply is a tripwire, never auto-run
+      must_pass: true
+      must_be_reversible: true     # a working down/rollback must also dry-run clean
+
+# ---------------------------------------------------------------------------
+# Coverage gate. Absolute floor + a ratchet so coverage can only go up.
+# ---------------------------------------------------------------------------
+coverage:
+  cmd: "make coverage"             # emits a line-coverage percentage
+  min_line: 80                     # hard floor: line coverage must be >= 80%
+  no_decrease: true                # ratchet: must not drop below the base branch's coverage

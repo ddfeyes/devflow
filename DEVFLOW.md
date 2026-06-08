@@ -51,7 +51,7 @@ devflow runs **two engines under one orchestrator** (the `/devflow` command), ea
 6. **deploy (health-gated)** — Deployer: (a) confirm the repo exposes a **machine-readable health/SLO signal + rollback hook**; absent → STOP at merge for this repo, flag it. (b) deploy via the repo's own mechanism (canary/staged where available). (c) poll **live** health (a real tool call — never a guessed number; per CLAUDE.md). (d) within SLO → promote; breach → **auto-rollback**, halt the pipeline, alert. Killswitch stays armed throughout.
 7. **postship** — reconcile `count(packets)==count(outcomes)`, `graphify update .`, append `reference_*.md` + `MEMORY.md`, render `REPORT.md`.
 
-Every gate emits `{pass, reason, evidence}`. **No gate → no advance.**
+Every gate emits `{pass, reason, evidence}`. **No gate → no advance.** The two fan-out gates are strict and proven by `selftest/gates.test.mjs`: **recon** fails unless every expected scout returned a pack with real files (a missing scout is surfaced, not silently dropped); **verify** requires the full expected vote count + exact lens coverage + every vote `pass:true` with non-empty evidence (no "unanimous among survivors"). Parallel agents write per-agent event files (no shared-journal races). Task/acceptance/handoff/verdict contracts live in `schemas/*.json`; per-repo CI in `.devflow/quality.yml`.
 
 ## 5. Autonomy dial
 ```

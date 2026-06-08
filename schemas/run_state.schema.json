@@ -1,0 +1,71 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://devflow.local/schemas/run_state.schema.json",
+  "title": "RunState",
+  "description": "The canonical, resumable snapshot of one devflow run (#13). Derivable from the append-only journal, it is the single source of truth the orchestrator reconciles against existing branches/PRs/deploys on --resume. phase is the run lifecycle; each task carries its own per-task state, sha, and prUrl; locks coordinates exclusive access with an epoch fence.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["runId", "phase", "epicBranch", "tasks"],
+  "properties": {
+    "runId": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable run identifier; also the .coord/runs/<runId>/ directory name."
+    },
+    "phase": {
+      "type": "string",
+      "enum": ["INIT", "RECON_DONE", "PLAN_DONE", "WAVE_INTEGRATED", "VERIFY_DONE", "MERGED", "DEPLOYED", "ROLLED_BACK", "REPORT_DONE"],
+      "description": "Run lifecycle phase. Monotonic forward except ROLLED_BACK (set when a health-gated deploy auto-rolls-back)."
+    },
+    "epicBranch": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The epic integration branch onto which locally-green per-task commits are cherry-picked."
+    },
+    "tasks": {
+      "type": "object",
+      "description": "Map of task id -> per-task run state. Dynamic keys (T-001, ...), so this object is a MAP, not a fixed-shape record; per-task values follow the fixed schema below.",
+      "propertyNames": { "pattern": "^T-[0-9]{3,}$" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["state"],
+        "description": "Per-task run state. Fixed-shape: only state/sha/prUrl are allowed.",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": ["READY", "IMPLEMENTED", "INTEGRATED", "VERIFIED", "FAILED", "FLAGGED", "SHIPPED"],
+            "description": "Task progress: READY (dependencies met) -> IMPLEMENTED (handoff in) -> INTEGRATED (cherry-picked onto epic) -> VERIFIED (panel PASS) -> SHIPPED (merged/deployed). FAILED = unrecoverable; FLAGGED = halted for a human (tripwire / bounded-repair exhausted)."
+          },
+          "sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{7,40}$",
+            "description": "Commit SHA of this task's integrated work (the revision verified)."
+          },
+          "prUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the PR carrying this task's merge (set at/after MERGED)."
+          }
+        }
+      }
+    },
+    "locks": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["owner", "epoch"],
+      "description": "Exclusive-access fence for the run's mutable .coord state. Fixed-shape.",
+      "properties": {
+        "owner": {
+          "type": "string",
+          "description": "Identifier of the agent/process currently holding the lock (empty string when unheld)."
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Monotonically increasing fence token; a stale holder (lower epoch) must not mutate state."
+        }
+      }
+    }
+  }
+}
