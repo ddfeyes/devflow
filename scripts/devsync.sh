@@ -68,16 +68,13 @@ else
 fi
 
 # ---- secret scan before any push ----
-# Determine the patch that WOULD be pushed.
-if [ -n "$UP" ]; then
-  RANGE="$UP..HEAD"
-else
-  DEF="$(git rev-parse --abbrev-ref origin/HEAD 2>/dev/null | sed 's@^origin/@@' || true)"
-  RANGE="${DEF:+origin/$DEF..HEAD}"
-fi
+# The patch that WOULD be pushed = commits reachable from HEAD but on NO origin/* ref. This is
+# correct for BOTH the ahead-of-upstream case AND a brand-new branch with no upstream yet, and it
+# is empty ONLY when nothing is genuinely outgoing — never merely because a base ref was
+# indeterminate. Fail CLOSED: if it can't be computed, refuse to push (don't fall through unscanned).
 PATCH=""
-if [ -n "$RANGE" ]; then
-  PATCH="$(git log "$RANGE" -p --no-color 2>/dev/null || true)"
+if ! PATCH="$(git log HEAD --not --remotes=origin -p --no-color 2>/dev/null)"; then
+  [ "$NO_PUSH" -eq 1 ] || die3 "$NAME: cannot compute outgoing diff to scan — refusing to push"
 fi
 
 if [ -n "$PATCH" ]; then
