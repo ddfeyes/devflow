@@ -1,3 +1,7 @@
 .DS_Store
 *.log
 node_modules/
+
+# devsync local-only config (never commit real server targets / deny identifiers)
+devsync.targets
+devsync.public-deny.txt

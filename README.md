@@ -33,6 +33,25 @@ Removing the human from review/merge/deploy does **not** remove the gate — it 
 - **A — health-gated deploy + auto-rollback.** A repo only auto-deploys if it exposes a machine-readable health/SLO signal + rollback hook. Deploy is always `deploy → read live health → auto-promote OR auto-rollback`. No health gate → the loop closes at **merge** for that repo.
 - **B — irreversible-ops tripwire.** These always halt for a human (drop/delete data, prod-destructive migration, rotate/read prod creds, disable a killswitch, force-push/history-rewrite). Automation must never do the unrecoverable.
 
+## Staying in sync (local ↔ GitHub ↔ server)
+
+Closed-loop autonomy is pointless if the three copies of your code drift. devflow keeps them aligned without ever asking and without per-edit push (which would bypass secret-scanning and ship half-finished states):
+
+- **pull is automatic, push is a scanned checkpoint.** Add a `SessionStart` hook (below) that fast-forwards a clean tree from origin — so you always start work synced. Pushing happens at a checkpoint — `/devsync` or the end of every `/devflow` run — so the outgoing diff is **always secret-scanned first**.
+- **`/devsync`** (`scripts/devsync.sh`) does the full triangle for a repo: `fetch` → fast-forward/rebase local onto origin → secret-scan the outgoing diff (strict for **PUBLIC** remotes — blocks private keys, cloud tokens, and your own site identifiers from `~/.claude/devsync.public-deny.txt`) → push. It refuses on detached HEAD, mid-rebase, or a dirty divergence, and never leaves the repo half-synced.
+- **server leg is opt-in, never blind.** Only repos listed in `~/.claude/devsync.targets` (`<repo> <ssh-host> <remote-path> <deploy-cmd>`) get pulled + redeployed on their server. No line → git-only sync. This avoids the classic "hotfix lives in the container, never makes it back to git" drift — deploy from the merged SHA, always.
+
+Why not auto-push on every edit? Because the secret scan can't be inlined into a per-edit hook, per-edit push ships broken intermediate states to `main`, and it races devflow's own branch/PR flow. The checkpoint is the right seam.
+
+SessionStart auto-pull hook (add to `~/.claude/settings.json`, safe — fetch always, fast-forward only a clean tree, never pushes):
+```json
+"hooks": {
+  "SessionStart": [{ "hooks": [{ "type": "command",
+    "command": "if git rev-parse --git-dir >/dev/null 2>&1; then git fetch -q 2>/dev/null || true; if [ -z \"$(git status --porcelain 2>/dev/null)\" ]; then B=$(git rev-list --count HEAD..@{u} 2>/dev/null || echo 0); if [ \"$B\" -gt 0 ] 2>/dev/null; then git merge --ff-only -q @{u} 2>/dev/null && echo \"devsync: fast-forwarded $B commit(s) from origin\" || true; fi; fi; fi"
+  }]}]
+}
+```
+
 ## Modern capability bolt-ons
 - **context7 MCP** — implementers/verifiers ground API/SDK usage against live docs (kills stale-API hallucination).
 - **chrome-devtools MCP** — verify lane drives the real UI for web targets (console, network, lighthouse).
@@ -44,10 +63,14 @@ Removing the human from review/merge/deploy does **not** remove the gate — it 
 DEVFLOW.md            # the playbook — full source of truth (roles, phases, gates, safeguards)
 commands/devflow.md   # the slash command — the orchestrator script
 workflows/devflow.js  # the fan-out engine — modes: recon | verify (stateless only)
+scripts/devsync.sh    # local↔GitHub↔server checkpoint sync (secret-scanned push)
+commands/devsync.md   # the /devsync slash command
+devsync.targets.example          # per-repo server deploy targets (copy to ~/.claude, gitignored)
+devsync.public-deny.example.txt  # site identifiers that must never reach a public remote
 selftest/gates.test.mjs  # proves the recon/verify gates fail correctly (run: node selftest/gates.test.mjs)
 schemas/*.json        # machine-checkable contracts: acceptance, task, handoff, verdict, run_state
 .devflow/quality.example.yml  # per-repo required/conditional CI checks + coverage policy
-install.sh            # copy the three core files into ~/.claude and fix the hardcoded path
+install.sh            # copy the core files into ~/.claude, seed devsync config, fix the engine path
 ```
 
 ## Install

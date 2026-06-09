@@ -1,0 +1,10 @@
+# devsync public-push deny list — copy to ~/.claude/devsync.public-deny.txt (gitignored, local-only).
+# Regexes (extended, case-insensitive) that must NEVER reach a PUBLIC remote. One per line.
+# devsync.sh already blocks generic secrets on ANY remote (private keys, AWS/GitHub/Slack/Google
+# tokens) and, for PUBLIC/unknown remotes, *MASTER_KEY*= assignments and 64-hex blobs.
+# Add YOUR site-specific identifiers here — the things that are not "secrets" but still must not leak:
+#
+# 203\.0\.113\.7          # your prod server IP
+# my-deploy-host          # your SSH host alias
+# you@example\.com        # your email
+# /home/youruser          # your home path / username

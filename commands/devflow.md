@@ -33,7 +33,7 @@ Scoped Skill/MCP reads only — never shell out to a graphify/memory CLI.
 
 ## 5. Run the pipeline
 
-**(a) recon — dynamic Workflow.** Invoke **Workflow** with `scriptPath: "/home/hui20metrov/.claude/workflows/devflow.js"`, `args: { mode: "recon", runId, epic, tasks }`. Gate: every pack `ok` with real files; any `empty` → ABORT.
+**(a) recon — dynamic Workflow.** Invoke **Workflow** with `scriptPath: "$HOME/.claude/workflows/devflow.js"` (install.sh rewrites this to your absolute path), `args: { mode: "recon", runId, epic, tasks }`. Gate: every pack `ok` with real files; any `empty` → ABORT.
 
 **(b) plan — Planner agent.** Spawn a Planner (**writing-plans** Skill): acyclic DAG into `.coord/epics/<E>/` — per-task `T-nnn.md` (intent, `owned_paths`, machine-checkable acceptance, `riskZone`, and `web:true` for browser-verifiable targets), waves with **pairwise-disjoint `owned_paths`** (serialize shared `go.mod`/types/schema/router/migration index into their own wave — never overlap). Record packet count in `manifest.json`.
 - `--supervised` → surface the DAG + risk flags, STOP for human OK. Otherwise proceed. Irreversible-ops packets (§7) checkpoint regardless.
@@ -51,7 +51,7 @@ Scoped Skill/MCP reads only — never shell out to a graphify/memory CLI.
   4. Within SLO → promote. Breach → **auto-rollback**, halt the pipeline, alert. Killswitch stays armed throughout.
   - **Rollout maturity:** trading-go deploy is gated until a rollback **drill** has been observed firing; prove the closed loop on tax-workbench / mm-dashboard first.
 
-**(g) postship.** reconcile `count(packets)==count(outcomes)`, `graphify update .`, append verified durable facts to `reference_*.md` + `MEMORY.md`, render `.coord/runs/<runId>/REPORT.md`. Run detached; resume idempotently from the journaled `runId`.
+**(g) postship.** reconcile `count(packets)==count(outcomes)`, `graphify update .`, append verified durable facts to `reference_*.md` + `MEMORY.md`, render `.coord/runs/<runId>/REPORT.md`, then run **`bash ~/.claude/scripts/devsync.sh`** (the `/devsync` checkpoint) so the run ends with local↔GitHub↔server in sync — the merge already pushed `main`, so this reconciles any straggler commits + (per-repo opt-in) the server. Never bypass its secret scan with a raw `git push`. Run detached; resume idempotently from the journaled `runId`.
 
 ## 6. Blast radius (closing the loop expands access)
 Deploy means the Deployer holds ssh/docker/registry creds for the target servers — beyond the git/gh the rest of the pipeline uses. Scope per-repo; never read or echo plaintext secrets (§7).

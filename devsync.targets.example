@@ -1,0 +1,7 @@
+# devsync server targets — copy to ~/.claude/devsync.targets (gitignored, local-only) and edit.
+# One repo per line:  <repo-name>  <ssh-host>  <remote-path>  <deploy-command>
+# Only repos listed here get the server leg; everything else is git-only sync.
+# devsync NEVER blind-ssh-deploys — a repo with no line here is never touched on the server.
+#
+# myapp        my-deploy-host  /srv/myapp        git pull --ff-only && docker compose up -d --build
+# mydashboard  my-deploy-host  /srv/mydashboard  git pull --ff-only && npm ci && npm run build && pm2 restart mydashboard
