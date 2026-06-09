@@ -70,11 +70,19 @@ Cut ONE context_pack.md for this scope: god-nodes + community (graphify GRAPH_RE
   const byId = new Map(packs.map(p => [p.item, p]))         // pack.item -> pack
   const missing = units.filter(u => !byId.has(u.id)).map(u => u.id)   // null returns AND id mismatch
   const empty = packs.filter(p => !p.ok || !Array.isArray(p.files) || p.files.length === 0).map(p => p.item)
+  // FAILURE TAXONOMY: tag each failed unit. missing (no pack / id mismatch) and
+  // empty (pack present but no files) are disjoint sets, so no double-tagging.
+  // This is additive metadata; the ok/missing/empty gate fields above are untouched.
+  const failureClasses = [
+    ...missing.map(item => ({ item, class: 'MISSING_SCOUT' })),
+    ...empty.map(item => ({ item, class: 'EMPTY_PACK' })),
+  ]
   return {
     mode: 'recon', runId: RID,
     ok: units.length > 0 && missing.length === 0 && empty.length === 0,
     missing,
     empty,
+    failureClasses,
     packs: packs.map(p => ({ item: p.item, files: p.files, godNodes: p.godNodes })),
   }
 }
@@ -122,9 +130,29 @@ TASK ${t.id}: ${t.intent}. Build & serve the app from ${at}, then drive the ACTU
         (!t.web || byLens.runtime === 1) &&
         v.every(x => x.pass === true) &&
         v.every(x => Array.isArray(x.evidence) && x.evidence.length > 0)
+      // FAILURE TAXONOMY: when !taskPass, classify by precedence. Each branch mirrors
+      // a clause of the taskPass gate above, so the class can never disagree with the
+      // verdict. taskPass itself is unchanged. Precedence:
+      //   PARTIAL_QUORUM (fewer votes than expected; v.length can never exceed it)
+      //   > LENS_MISSING (lens counts off) > EVIDENCE_MISSING (a vote has empty evidence)
+      //   > VERDICT_FAIL (a vote pass:false). Branches are exhaustive over every way
+      //   taskPass can be false, so failureClass is always non-null when !taskPass.
+      let failureClass = null
+      if (!taskPass) {
+        const lensOff = !(byLens.correctness === n && byLens.completeness === 1 && (!t.web || byLens.runtime === 1))
+        const evidenceMissing = v.some(x => !(Array.isArray(x.evidence) && x.evidence.length > 0))
+        const verdictFail = v.some(x => x.pass !== true)
+        failureClass =
+          v.length < expectedVotes ? 'PARTIAL_QUORUM'
+          : lensOff ? 'LENS_MISSING'
+          : evidenceMissing ? 'EVIDENCE_MISSING'
+          : verdictFail ? 'VERDICT_FAIL'
+          : null
+      }
       return {
         task: t.id,
         pass: taskPass,
+        failureClass,
         votes: v.map(x => ({ lens: x.lens, pass: x.pass })),
         missingVotes: expectedVotes - v.length,
         evidence: v.flatMap(x => x.evidence || []),
@@ -140,6 +168,7 @@ TASK ${t.id}: ${t.intent}. Build & serve the app from ${at}, then drive the ACTU
     verdicts,
     failed: verdicts.filter(v => !v.pass).map(v => ({
       task: v.task,
+      failureClass: v.failureClass,
       reason: [
         v.missingVotes > 0 ? `${v.missingVotes} missing vote(s)` : null,
         v.votes.filter(x => !x.pass).map(x => `${x.lens}:fail`).join(', ') || null,

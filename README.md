@@ -80,10 +80,16 @@ The gates are not just prompt rules — the fan-out engine's two gates are **str
 - **verify gate** requires the *full expected vote count* (N correctness + 1 completeness + runtime-if-web), exact lens coverage, every vote `pass:true`, and **non-empty evidence** on each — "unanimous" can't mean "unanimous among the survivors."
 - Parallel agents no longer share a journal/report file (per-agent event files, merged by the orchestrator) — no write races.
 
-`selftest/gates.test.mjs` loads the real engine in a `vm` sandbox and asserts all of the above (8 scenarios incl. missing-scout, partial-quorum, empty-evidence, web-runtime, unknown-mode). It exits non-zero on regression — run it after any change to `devflow.js`.
+The contracts are **enforced in code, not just specified** (run via the selftests):
+- `scripts/validate.mjs` — AJV validation of any doc against `schemas/*.json` (a verdict with empty `evidence`, or a packet missing required `acceptance`, is *rejected*, exit 1).
+- `scripts/run_state.mjs` — canonical run-state source-of-truth with **monotonic phase transitions** and an **epoch fence-token lock**. `save()` is the single chokepoint: it re-checks transition-legality and epoch-freshness *against the on-disk state* before writing (atomic tmp+rename), so an illegal phase jump or a stale-epoch write **cannot reach disk even if a caller bypasses the pure functions**.
+- `scripts/quality.mjs` — runs `.devflow/quality.yml` (required + stack-conditional checks + coverage floor); a failing required check is exit 1, never swallowed.
+- **failure taxonomy** in the engine (`PARTIAL_QUORUM | LENS_MISSING | EVIDENCE_MISSING | VERDICT_FAIL`, `MISSING_SCOUT | EMPTY_PACK`) — additive, never weakens a gate.
 
-**Done:** P0 gate fixes • selftest • contract schemas (`schemas/`, `.devflow/quality.example.yml`).
-**Next (specified, not yet enforced in code):** a dedicated *Wave Integrator* role for semantic cross-task conflicts; a failure taxonomy with per-class repair paths (flake vs env vs integration vs acceptance); wiring `run_state.json` as the canonical source-of-truth with run locks/epochs; a runner that executes `.devflow/quality.yml`. Until then those are contracts/specs, not yet machine-enforced — treat them as the design target, not a guarantee.
+Two selftests prove it and exit non-zero on regression (run after any change): `selftest/gates.test.mjs` (8 scenarios — loads the real engine in a `vm` sandbox: missing-scout, partial-quorum, empty-evidence, web-runtime, unknown-mode) and `selftest/contracts.test.mjs` (10 scenarios — incl. illegal-transition, stale-epoch, and the `save()` bypass being closed).
+
+**Done:** strict P0 gates + selftests • AJV-enforced contract schemas • run_state source-of-truth with locks • quality.yml runner • failure taxonomy.
+**Next (genuinely not built yet):** a dedicated *Wave Integrator* role for semantic cross-task conflicts (lives in the team-orchestrator/execution layer, prompt-level today), and wiring `run_state.json` into the live orchestrator loop end-to-end. Treat those as the design target, not a guarantee.
 
 ## Status
 Validated on real end-to-end runs (greenfield builds and brownfield epics shipped to `main`): the blind verify panel has caught real blockers and majors that would otherwise have merged. Auto-deploy to high-stakes targets stays gated until a rollback drill is observed.

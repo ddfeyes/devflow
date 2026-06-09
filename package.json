@@ -1,0 +1,27 @@
+{
+  "name": "devflow",
+  "version": "1.0.0",
+  "description": "Autonomous developer workflow for Claude Code: take an epic from a one-line intent to **shipped in production**, hands-off — with independent writer/verifier lanes, machine-checkable gates, and a resumable run journal.",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "validate": "node scripts/validate.mjs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ddfeyes/devflow.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ddfeyes/devflow/issues"
+  },
+  "homepage": "https://github.com/ddfeyes/devflow#readme",
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "ajv-formats": "^3.0.1",
+    "js-yaml": "^4.2.0"
+  }
+}
